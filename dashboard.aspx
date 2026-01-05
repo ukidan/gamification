@@ -1,0 +1,1286 @@
+<%@ Page Language="C#" MasterPageFile="~masterurl/default.master" Inherits="Microsoft.SharePoint.WebPartPages.WebPartPage" %>
+
+<asp:Content ID="PageHead" ContentPlaceHolderID="PlaceHolderAdditionalPageHead" runat="server">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script type="text/javascript" src="/_layouts/15/SP.RequestExecutor.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(0, 102, 204, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(0, 102, 204, 0.1) 0%, transparent 50%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo {
+            height: 50px;
+            width: auto;
+            object-fit: contain;
+            max-width: 200px;
+        }
+
+        .logo-text {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #ffffff;
+            letter-spacing: 2px;
+            font-family: 'Arial', sans-serif;
+            display: none;
+        }
+
+        header h1 {
+            color: #ffffff;
+            font-size: 1.8em;
+            font-weight: 300;
+            margin: 0;
+        }
+
+        .user-info {
+            background: #0066cc;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 102, 204, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .refresh-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(180deg);
+        }
+        
+        .refresh-btn:active {
+            transform: rotate(360deg);
+        }
+        
+        .config-info {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #ffc107;
+        }
+        
+        .config-info code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            transition: transform 0.3s, border-color 0.3s;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 102, 204, 0.5);
+            box-shadow: 0 15px 40px rgba(0, 102, 204, 0.3);
+        }
+
+        .metric-value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+
+        .metric-label {
+            color: #b0b0b0;
+            font-size: 1.1em;
+        }
+
+        .leaderboard-section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-section h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .leaderboard-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #0066cc;
+            color: white;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        th {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        tbody tr:hover {
+            background: rgba(0, 102, 204, 0.1);
+        }
+
+        .rank-1 {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: white;
+            font-weight: bold;
+        }
+
+        .rank-2 {
+            background: linear-gradient(135deg, #C0C0C0 0%, #A0A0A0 100%);
+            color: white;
+            font-weight: bold;
+        }
+
+        .rank-3 {
+            background: linear-gradient(135deg, #CD7F32 0%, #8B4513 100%);
+            color: white;
+            font-weight: bold;
+        }
+
+        .tier-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .tier-1 { background: #808080; color: white; }
+        .tier-2 { background: #28A745; color: white; }
+        .tier-3 { background: #007BFF; color: white; }
+        .tier-4 { background: #6F42C1; color: white; }
+        .tier-5 { background: #FFD700; color: #333; }
+
+        .charts-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .chart-container h3 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .chart-container canvas {
+            max-height: 300px;
+        }
+
+        .recent-activity {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .recent-activity h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .activity-item {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ffffff;
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-type {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .activity-post { background: #28A745; color: white; }
+        .activity-comment { background: #007BFF; color: white; }
+        .activity-reaction { background: #FFC107; color: #333; }
+
+        .rewards-section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            margin-bottom: 30px;
+        }
+
+        .rewards-section h2 {
+            color: #ffffff;
+            font-size: 2em;
+        }
+
+        .reward-card {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            padding: 20px;
+            border-radius: 15px;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 102, 204, 0.3);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            border: 1px solid rgba(0, 102, 204, 0.3);
+        }
+
+        .reward-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 102, 204, 0.5);
+            border-color: rgba(0, 102, 204, 0.6);
+        }
+
+        .reward-card.unavailable {
+            opacity: 0.5;
+            background: linear-gradient(135deg, #333 0%, #222 100%);
+            cursor: not-allowed;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .reward-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .reward-description {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 15px;
+            min-height: 40px;
+        }
+
+        .reward-cost {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .reward-availability {
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+
+        .redemption-history {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 102, 204, 0.2);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            margin-bottom: 30px;
+        }
+
+        .redemption-history h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .status-pending { background: #FFC107; color: #333; }
+        .status-approved { background: #28A745; color: white; }
+        .status-rejected { background: #DC3545; color: white; }
+        .status-fulfilled { background: #17A2B8; color: white; }
+
+        #requestRewardBtn:hover {
+            background: #0052a3;
+            box-shadow: 0 6px 20px rgba(0, 102, 204, 0.5);
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            header h1 {
+                font-size: 2em;
+                margin-bottom: 15px;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 0.9em;
+            }
+
+            th, td {
+                padding: 10px;
+            }
+        }
+    </style>
+</asp:Content>
+
+<asp:Content ID="Main" ContentPlaceHolderID="PlaceHolderMain" runat="server">
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="https://kidan.co/wp-content/uploads/2025/09/KD-Logo_White-Type-scaled.png" alt="Kidan Logo" class="logo" id="kidanLogo" onerror="document.getElementById('logoFallback').style.display='block'; this.style.display='none';">
+                <div class="logo-text" id="logoFallback" style="display: none;">KIDAN</div>
+                <h1>Gamification Dashboard</h1>
+            </div>
+            <div class="user-info" id="userInfo">
+                <span id="userName">Loading...</span>
+                <button class="refresh-btn" onclick="loadData()" title="Refresh Data">🔄 Refresh</button>
+            </div>
+        </header>
+        
+        <div class="config-info" id="configInfo" style="display: none;">
+            <strong>ℹ️ Configuration:</strong> Dashboard is connecting to <code id="configSite">...</code>
+        </div>
+        
+        <div id="diagnosticPanel" style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); padding: 15px; border-radius: 10px; margin: 20px 0; font-size: 12px; display: none;">
+            <strong>🔍 Diagnostic Information:</strong>
+            <div id="diagnosticContent" style="margin-top: 10px; font-family: monospace;"></div>
+        </div>
+
+        <section class="metrics">
+            <div class="metric-card">
+                <div class="metric-value" id="totalPoints">0</div>
+                <div class="metric-label">Total Points</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="totalUsers">0</div>
+                <div class="metric-label">Active Users</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="avgPoints">0</div>
+                <div class="metric-label">Avg Points/User</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="totalPosts">0</div>
+                <div class="metric-label">Total Posts</div>
+            </div>
+        </section>
+
+        <section class="leaderboard-section">
+            <h2>🏆 Leaderboard</h2>
+            <div class="leaderboard-container">
+                <table id="leaderboardTable">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Name</th>
+                            <th>Points</th>
+                            <th>Tier</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboardBody">
+                        <tr><td colspan="4">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="charts-section">
+            <div class="chart-container">
+                <h3>📊 Tier Distribution</h3>
+                <canvas id="tierChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>📈 Points Over Time</h3>
+                <canvas id="pointsChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>🎯 Activity Breakdown</h3>
+                <canvas id="activityChart"></canvas>
+            </div>
+        </section>
+
+        <section class="recent-activity">
+            <h2>🕐 Recent Activity</h2>
+            <div id="recentActivity">
+                <p>Loading...</p>
+            </div>
+        </section>
+
+        <section class="rewards-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>🎁 Available Rewards</h2>
+                <a href="#" id="requestRewardBtn" style="background: #0066cc; color: white; padding: 10px 20px; border-radius: 25px; text-decoration: none; font-weight: bold; box-shadow: 0 4px 15px rgba(0, 102, 204, 0.3); transition: all 0.3s;">+ Request Reward</a>
+            </div>
+            <div id="rewardsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;">
+                <p>Loading rewards...</p>
+            </div>
+        </section>
+
+        <section class="redemption-history">
+            <h2>📋 My Redemption History</h2>
+            <div class="leaderboard-container">
+                <table id="redemptionTable">
+                    <thead>
+                        <tr>
+                            <th>Reward</th>
+                            <th>Points</th>
+                            <th>Status</th>
+                            <th>Request Date</th>
+                            <th>Approval Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="redemptionBody">
+                        <tr><td colspan="5">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Configuration
+        const SHAREPOINT_SITE = 'https://sakidan.sharepoint.com/sites/KIDANIAN-Gamification';
+        const LIST_USER_TOTALS = 'SP_UserTotals';
+        const LIST_POINTS_LEDGER = 'SP_PointsLedger';
+        const LIST_REWARDS = 'SP_Rewards';
+        const LIST_REDEMPTIONS = 'SP_Redemptions';
+        
+        // Check if running in SharePoint
+        const IS_SHAREPOINT = window.location.hostname.includes('sharepoint.com');
+        
+        // Auto-detect SharePoint site if running within SharePoint
+        let ACTUAL_SHAREPOINT_SITE = SHAREPOINT_SITE;
+        if (IS_SHAREPOINT) {
+            ACTUAL_SHAREPOINT_SITE = window.location.protocol + '//' + window.location.hostname + window.location.pathname.split('/').slice(0, 4).join('/');
+        }
+
+        // Global data storage
+        let userTotalsData = [];
+        let pointsLedgerData = [];
+        let rewardsData = [];
+        let redemptionsData = [];
+        let currentUserEmail = '';
+        let executor;
+
+        // Show configuration info
+        function showConfigInfo() {
+            const configInfo = document.getElementById('configInfo');
+            const configSite = document.getElementById('configSite');
+            if (configInfo && configSite) {
+                const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+                configSite.textContent = siteUrl;
+                configInfo.style.display = 'block';
+            }
+        }
+        
+        // Show diagnostic information
+        function updateDiagnostics() {
+            const panel = document.getElementById('diagnosticPanel');
+            const content = document.getElementById('diagnosticContent');
+            if (!panel || !content) return;
+            
+            const diagnostics = [
+                `IS_SHAREPOINT: ${IS_SHAREPOINT}`,
+                `ACTUAL_SHAREPOINT_SITE: ${ACTUAL_SHAREPOINT_SITE}`,
+                `SP.RequestExecutor available: ${typeof SP !== 'undefined' && typeof SP.RequestExecutor !== 'undefined'}`,
+                `Executor initialized: ${executor !== undefined && executor !== null}`,
+                `Current URL: ${window.location.href}`,
+                `Hostname: ${window.location.hostname}`
+            ];
+            
+            content.innerHTML = diagnostics.join('<br>');
+            panel.style.display = 'block';
+        }
+        
+        // Wait for SP.RequestExecutor to load
+        function waitForSPRequestExecutor(callback, maxAttempts = 20) {
+            let attempts = 0;
+            const checkInterval = setInterval(() => {
+                attempts++;
+                if (typeof SP !== 'undefined' && typeof SP.RequestExecutor !== 'undefined') {
+                    clearInterval(checkInterval);
+                    console.log('SP.RequestExecutor loaded successfully');
+                    callback();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    console.error('SP.RequestExecutor failed to load after', maxAttempts, 'attempts');
+                    showErrorMessage('SharePoint RequestExecutor failed to load. Please refresh the page.');
+                }
+            }, 100);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            showConfigInfo();
+            updateDiagnostics();
+            console.log('Dashboard initialized. IS_SHAREPOINT:', IS_SHAREPOINT);
+            console.log('ACTUAL_SHAREPOINT_SITE:', ACTUAL_SHAREPOINT_SITE);
+            console.log('SP available:', typeof SP !== 'undefined');
+            console.log('SP.RequestExecutor available:', typeof SP !== 'undefined' && typeof SP.RequestExecutor !== 'undefined');
+            
+            if (IS_SHAREPOINT) {
+                // Wait for SP.RequestExecutor to be available
+                waitForSPRequestExecutor(() => {
+                    try {
+                        executor = new SP.RequestExecutor(ACTUAL_SHAREPOINT_SITE);
+                        console.log('SP.RequestExecutor initialized successfully');
+                        updateDiagnostics();
+                        loadData();
+                    } catch (error) {
+                        console.error('Error initializing SP.RequestExecutor:', error);
+                        console.error('Error stack:', error.stack);
+                        showErrorMessage('Failed to initialize SharePoint RequestExecutor: ' + error.message);
+                        updateDiagnostics();
+                    }
+                });
+            } else {
+                showErrorMessage('This dashboard must be hosted on SharePoint to access data.');
+                updateDiagnostics();
+            }
+        });
+
+        // Load data from SharePoint
+        async function loadData() {
+            try {
+                showLoadingState();
+                
+                // Get current user email first
+                await getCurrentUser();
+                
+                // Load all data in parallel
+                const results = await Promise.allSettled([
+                    loadUserTotals(),
+                    loadPointsLedger(),
+                    loadRewards(),
+                    loadRedemptions()
+                ]);
+                
+                // Check for errors
+                const errors = results.filter(r => r.status === 'rejected');
+                if (errors.length > 0) {
+                    console.error('Some data failed to load:', errors);
+                    showErrorMessage('Some data could not be loaded. Check console for details.');
+                }
+                
+                renderDashboard();
+                hideLoadingState();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                hideLoadingState();
+                showErrorMessage(`Error loading data: ${error.message}. Check console for details.`);
+            }
+        }
+        
+        // Show loading state
+        function showLoadingState() {
+            document.getElementById('leaderboardBody').innerHTML = 
+                '<tr><td colspan="4" style="text-align: center; padding: 20px;">⏳ Loading data...</td></tr>';
+            document.getElementById('rewardsGrid').innerHTML = '<p>⏳ Loading rewards...</p>';
+            document.getElementById('redemptionBody').innerHTML = 
+                '<tr><td colspan="5" style="text-align: center; padding: 20px;">⏳ Loading...</td></tr>';
+            document.getElementById('recentActivity').innerHTML = '<p>⏳ Loading...</p>';
+        }
+        
+        // Hide loading state
+        function hideLoadingState() {
+            // Loading states will be replaced by actual data
+        }
+        
+        // Show error message
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'background: rgba(220, 53, 69, 0.2); border: 1px solid #dc3545; color: #ff6b6b; padding: 15px; border-radius: 10px; margin: 20px 0; text-align: center;';
+            errorDiv.innerHTML = `⚠️ ${message}`;
+            document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.metrics'));
+            
+            // Auto-remove after 10 seconds
+            setTimeout(() => errorDiv.remove(), 10000);
+        }
+
+        // Get current user email
+        async function getCurrentUser() {
+            const url = `/_api/web/currentuser`;
+            const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+            
+            if (!executor) {
+                console.error('SP.RequestExecutor not initialized');
+                throw new Error('SP.RequestExecutor not initialized');
+            }
+            
+            if (IS_SHAREPOINT && executor) {
+                return new Promise((resolve, reject) => {
+                    console.log('Fetching current user from:', `${siteUrl}${url}`);
+                    executor.executeAsync({
+                        url: `${siteUrl}${url}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                if (jsonData.d && jsonData.d.Email) {
+                                    currentUserEmail = jsonData.d.Email;
+                                    const userNameEl = document.getElementById('userName');
+                                    if (userNameEl) {
+                                        userNameEl.textContent = jsonData.d.Title;
+                                    }
+                                    console.log('Current user:', currentUserEmail);
+                                    resolve();
+                                } else {
+                                    throw new Error('Invalid response format');
+                                }
+                            } catch (error) {
+                                console.error('Error parsing current user:', error);
+                                resolve();
+                            }
+                        },
+                        error: (error) => {
+                            console.error('Error loading current user:', error);
+                            resolve();
+                        }
+                    });
+                });
+            }
+        }
+
+        // Load SP_UserTotals list
+        async function loadUserTotals() {
+            const url = `/_api/web/lists/getbytitle('${LIST_USER_TOTALS}')/items?$select=ID,TotalPoints,Tier,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=TotalPoints desc`;
+            const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+            
+            if (IS_SHAREPOINT && executor) {
+                return new Promise((resolve, reject) => {
+                    executor.executeAsync({
+                        url: `${siteUrl}${url}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                if (jsonData.d && jsonData.d.results) {
+                                    userTotalsData = jsonData.d.results.map(item => {
+                                        const email = item.EmployeeEmail?.Email || 
+                                                    item.EmployeeEmail?.EMail || 
+                                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
+                                                    '';
+                                        const name = item.EmployeeEmail?.Title || 
+                                                   item.EmployeeEmail?.DisplayName || 
+                                                   item.EmployeeEmail?.Name || 
+                                                   'Unknown';
+                                        
+                                        return {
+                                            id: item.ID,
+                                            totalPoints: item.TotalPoints || 0,
+                                            tier: item.Tier || 'Tier 1',
+                                            email: email,
+                                            name: name
+                                        };
+                                    });
+                                    console.log('User Totals loaded:', userTotalsData.length, 'users');
+                                    resolve();
+                                } else {
+                                    throw new Error('Invalid response format');
+                                }
+                            } catch (error) {
+                                console.error('Error parsing user totals:', error);
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            console.error('Error loading user totals:', error);
+                            reject(error);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Load SP_PointsLedger list
+        async function loadPointsLedger() {
+            const url = `/_api/web/lists/getbytitle('${LIST_POINTS_LEDGER}')/items?$select=ID,Points,ActionType,SourceApp,CreatedOn,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=CreatedOn desc&$top=100`;
+            const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+            
+            if (IS_SHAREPOINT && executor) {
+                return new Promise((resolve, reject) => {
+                    executor.executeAsync({
+                        url: `${siteUrl}${url}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                if (jsonData.d && jsonData.d.results) {
+                                    pointsLedgerData = jsonData.d.results.map(item => {
+                                        const email = item.EmployeeEmail?.Email || 
+                                                    item.EmployeeEmail?.EMail || 
+                                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
+                                                    '';
+                                        const name = item.EmployeeEmail?.Title || 
+                                                   item.EmployeeEmail?.DisplayName || 
+                                                   item.EmployeeEmail?.Name || 
+                                                   'Unknown';
+                                        
+                                        return {
+                                            id: item.ID,
+                                            points: item.Points || 0,
+                                            actionType: item.ActionType || 'Unknown',
+                                            sourceApp: item.SourceApp || 'Unknown',
+                                            createdOn: new Date(item.CreatedOn),
+                                            email: email,
+                                            name: name
+                                        };
+                                    });
+                                    console.log('Points Ledger loaded:', pointsLedgerData.length, 'entries');
+                                    resolve();
+                                } else {
+                                    throw new Error('Invalid response format');
+                                }
+                            } catch (error) {
+                                console.error('Error parsing points ledger:', error);
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            console.error('Error loading points ledger:', error);
+                            reject(error);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Load SP_Rewards list
+        async function loadRewards() {
+            const url = `/_api/web/lists/getbytitle('${LIST_REWARDS}')/items?$select=ID,Title,Description,PointsCost,AvailableQuantity,Status,Category&$filter=Status eq 'Active'&$orderby=PointsCost asc`;
+            const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+            
+            if (IS_SHAREPOINT && executor) {
+                return new Promise((resolve, reject) => {
+                    executor.executeAsync({
+                        url: `${siteUrl}${url}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                if (jsonData.d && jsonData.d.results) {
+                                    rewardsData = jsonData.d.results.map(item => ({
+                                        id: item.ID,
+                                        title: item.Title || 'Untitled Reward',
+                                        description: item.Description || 'No description available',
+                                        pointsCost: item.PointsCost || 0,
+                                        availableQuantity: item.AvailableQuantity || 0,
+                                        status: item.Status || 'Active',
+                                        category: item.Category || 'Other'
+                                    }));
+                                    console.log('Rewards loaded:', rewardsData.length, 'rewards');
+                                    resolve();
+                                } else {
+                                    rewardsData = [];
+                                    console.log('No rewards found');
+                                    resolve();
+                                }
+                            } catch (error) {
+                                console.error('Error parsing rewards:', error);
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            console.error('Error loading rewards:', error);
+                            reject(error);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Load SP_Redemptions list (filtered by current user)
+        async function loadRedemptions() {
+            if (!currentUserEmail) {
+                console.log('Current user email not available, skipping redemptions');
+                redemptionsData = [];
+                return;
+            }
+
+            const url = `/_api/web/lists/getbytitle('${LIST_REDEMPTIONS}')/items?$select=ID,Title,Reward/Title,Reward/Id,PointsDeducted,Status,RequestDate,ApprovalDate,Employee/Email&$expand=Reward,Employee&$filter=Employee/Email eq '${currentUserEmail}'&$orderby=RequestDate desc&$top=50`;
+            const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+            
+            if (IS_SHAREPOINT && executor) {
+                return new Promise((resolve, reject) => {
+                    executor.executeAsync({
+                        url: `${siteUrl}${url}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                if (jsonData.d && jsonData.d.results) {
+                                    redemptionsData = jsonData.d.results
+                                        .filter(item => {
+                                            const itemEmail = item.Employee?.Email || 
+                                                            item.Employee?.EMail || 
+                                                            (item.Employee && typeof item.Employee === 'string' ? item.Employee : '');
+                                            return itemEmail === currentUserEmail;
+                                        })
+                                        .map(item => ({
+                                            id: item.ID,
+                                            rewardName: item.Reward?.Title || item.Title || 'Unknown Reward',
+                                            rewardId: item.Reward?.Id || 0,
+                                            pointsDeducted: item.PointsDeducted || 0,
+                                            status: item.Status || 'Pending',
+                                            requestDate: item.RequestDate ? new Date(item.RequestDate) : null,
+                                            approvalDate: item.ApprovalDate ? new Date(item.ApprovalDate) : null
+                                        }));
+                                    console.log('Redemptions loaded:', redemptionsData.length, 'redemptions');
+                                    resolve();
+                                } else {
+                                    redemptionsData = [];
+                                    console.log('No redemptions found');
+                                    resolve();
+                                }
+                            } catch (error) {
+                                console.error('Error parsing redemptions:', error);
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            console.error('Error loading redemptions:', error);
+                            redemptionsData = [];
+                            resolve();
+                        }
+                    });
+                });
+            }
+        }
+
+        // Render the complete dashboard
+        function renderDashboard() {
+            renderMetrics();
+            renderLeaderboard();
+            renderCharts();
+            renderRecentActivity();
+            renderRewards();
+            renderRedemptionHistory();
+        }
+
+        // Render key metrics
+        function renderMetrics() {
+            const totalPoints = userTotalsData.reduce((sum, user) => sum + user.totalPoints, 0);
+            const totalUsers = userTotalsData.length;
+            const avgPoints = totalUsers > 0 ? Math.round(totalPoints / totalUsers) : 0;
+            const totalPosts = pointsLedgerData.filter(item => item.actionType === 'Post').length;
+            
+            document.getElementById('totalPoints').textContent = totalPoints.toLocaleString();
+            document.getElementById('totalUsers').textContent = totalUsers;
+            document.getElementById('avgPoints').textContent = avgPoints;
+            document.getElementById('totalPosts').textContent = totalPosts;
+        }
+
+        // Render leaderboard table
+        function renderLeaderboard() {
+            const tbody = document.getElementById('leaderboardBody');
+            
+            if (userTotalsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No data available</td></tr>';
+                return;
+            }
+            
+            const sorted = [...userTotalsData].sort((a, b) => b.totalPoints - a.totalPoints);
+            
+            tbody.innerHTML = sorted.map((user, index) => {
+                const rank = index + 1;
+                const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : '';
+                const tierClass = `tier-${user.tier.replace('Tier ', '')}`;
+                
+                return `
+                    <tr class="${rankClass}">
+                        <td>${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}</td>
+                        <td>${user.name}</td>
+                        <td>${user.totalPoints.toLocaleString()}</td>
+                        <td><span class="tier-badge ${tierClass}">${user.tier}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Render charts
+        function renderCharts() {
+            renderTierChart();
+            renderPointsChart();
+            renderActivityChart();
+        }
+
+        // Tier Distribution Pie Chart
+        function renderTierChart() {
+            const tierCounts = {};
+            userTotalsData.forEach(user => {
+                tierCounts[user.tier] = (tierCounts[user.tier] || 0) + 1;
+            });
+            
+            const ctx = document.getElementById('tierChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(tierCounts),
+                    datasets: [{
+                        data: Object.values(tierCounts),
+                        backgroundColor: ['#808080', '#28A745', '#007BFF', '#6F42C1', '#FFD700']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Points Over Time Line Chart
+        function renderPointsChart() {
+            const pointsByDate = {};
+            pointsLedgerData.forEach(item => {
+                const date = item.createdOn.toISOString().split('T')[0];
+                pointsByDate[date] = (pointsByDate[date] || 0) + item.points;
+            });
+            
+            const sortedDates = Object.keys(pointsByDate).sort();
+            const cumulativePoints = [];
+            let total = 0;
+            sortedDates.forEach(date => {
+                total += pointsByDate[date];
+                cumulativePoints.push(total);
+            });
+            
+            const ctx = document.getElementById('pointsChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: 'Total Points',
+                        data: cumulativePoints,
+                        borderColor: '#0066cc',
+                        backgroundColor: 'rgba(0, 102, 204, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Activity Breakdown Bar Chart
+        function renderActivityChart() {
+            const activityCounts = {
+                'Post': 0,
+                'Comment': 0,
+                'Reaction': 0
+            };
+            
+            pointsLedgerData.forEach(item => {
+                if (activityCounts.hasOwnProperty(item.actionType)) {
+                    activityCounts[item.actionType]++;
+                }
+            });
+            
+            const ctx = document.getElementById('activityChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(activityCounts),
+                    datasets: [{
+                        label: 'Count',
+                        data: Object.values(activityCounts),
+                        backgroundColor: ['#28A745', '#0066cc', '#FFC107']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render recent activity
+        function renderRecentActivity() {
+            const container = document.getElementById('recentActivity');
+            
+            if (pointsLedgerData.length === 0) {
+                container.innerHTML = '<p>No recent activity</p>';
+                return;
+            }
+            
+            const recent = pointsLedgerData.slice(0, 10);
+            
+            container.innerHTML = recent.map(item => {
+                const activityClass = `activity-${item.actionType.toLowerCase()}`;
+                const date = item.createdOn.toLocaleDateString();
+                const time = item.createdOn.toLocaleTimeString();
+                
+                return `
+                    <div class="activity-item">
+                        <div>
+                            <span class="activity-type ${activityClass}">${item.actionType}</span>
+                            <strong>${item.name}</strong> earned <strong>${item.points} points</strong>
+                        </div>
+                        <div>${date} ${time}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Render available rewards
+        function renderRewards() {
+            const container = document.getElementById('rewardsGrid');
+            
+            if (rewardsData.length === 0) {
+                container.innerHTML = '<p>No rewards available at this time.</p>';
+                return;
+            }
+
+            // Get user's current points
+            const currentUser = userTotalsData.find(u => u.email === currentUserEmail);
+            const userPoints = currentUser ? currentUser.totalPoints : 0;
+
+            container.innerHTML = rewardsData.map(reward => {
+                const isAvailable = reward.availableQuantity > 0;
+                const canAfford = userPoints >= reward.pointsCost;
+                const unavailableClass = (!isAvailable || !canAfford) ? 'unavailable' : '';
+                
+                return `
+                    <div class="reward-card ${unavailableClass}" data-reward-id="${reward.id}">
+                        <div class="reward-title">${reward.title}</div>
+                        <div class="reward-description">${reward.description}</div>
+                        <div class="reward-cost">${reward.pointsCost} Points</div>
+                        <div class="reward-availability">
+                            ${!isAvailable ? 'Out of Stock' : canAfford ? 'Available' : `Need ${reward.pointsCost - userPoints} more points`}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handler for request reward button
+            const requestBtn = document.getElementById('requestRewardBtn');
+            if (requestBtn) {
+                const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+                requestBtn.href = `${siteUrl}/Lists/${LIST_REDEMPTIONS}/NewForm.aspx`;
+                requestBtn.target = '_blank';
+            }
+            
+            // Add click handlers for reward cards
+            container.querySelectorAll('.reward-card:not(.unavailable)').forEach(card => {
+                card.addEventListener('click', () => {
+                    const rewardId = card.getAttribute('data-reward-id');
+                    const reward = rewardsData.find(r => r.id == rewardId);
+                    if (reward) {
+                        const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
+                        window.open(`${siteUrl}/Lists/${LIST_REDEMPTIONS}/NewForm.aspx?Reward=${rewardId}`, '_blank');
+                    }
+                });
+            });
+        }
+
+        // Render redemption history
+        function renderRedemptionHistory() {
+            const tbody = document.getElementById('redemptionBody');
+            
+            if (redemptionsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">No redemption history</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = redemptionsData.map(redemption => {
+                const statusClass = `status-${redemption.status.toLowerCase()}`;
+                const requestDate = redemption.requestDate ? redemption.requestDate.toLocaleDateString() : 'N/A';
+                const approvalDate = redemption.approvalDate ? redemption.approvalDate.toLocaleDateString() : 'N/A';
+                
+                return `
+                    <tr>
+                        <td>${redemption.rewardName}</td>
+                        <td>${redemption.pointsDeducted}</td>
+                        <td><span class="status-badge ${statusClass}">${redemption.status}</span></td>
+                        <td>${requestDate}</td>
+                        <td>${approvalDate}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    </script>
+</asp:Content>
