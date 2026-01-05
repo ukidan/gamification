@@ -2,18 +2,14 @@
   "version": 2,
   "buildCommand": null,
   "outputDirectory": ".",
-  "routes": [
+  "rewrites": [
     {
-      "src": "/",
-      "dest": "/dashboard-standalone.html"
+      "source": "/",
+      "destination": "/dashboard-standalone.html"
     },
     {
-      "src": "/dashboard",
-      "dest": "/dashboard-standalone.html"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/dashboard",
+      "destination": "/dashboard-standalone.html"
     }
   ],
   "headers": [
