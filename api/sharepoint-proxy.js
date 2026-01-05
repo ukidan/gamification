@@ -74,11 +74,18 @@ export default async function handler(req, res) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error('SharePoint API error:', response.status, errorText);
+            
+            // Provide helpful error message
+            let errorMessage = 'SharePoint API error';
+            if (response.status === 401 || response.status === 403) {
+                errorMessage = 'SharePoint authentication required. The proxy API needs to be configured with Azure AD authentication or Managed Identity to access SharePoint data.';
+            }
+            
             return res.status(response.status).json({ 
-                error: 'SharePoint API error', 
+                error: errorMessage, 
                 status: response.status,
-                details: errorText,
-                note: 'SharePoint requires authentication. Configure Azure AD or use Managed Identity.'
+                details: errorText.substring(0, 200), // Limit error text length
+                note: 'To fix: Configure Azure AD app registration and add authentication headers to the proxy API, or use Azure Managed Identity.'
             });
         }
 

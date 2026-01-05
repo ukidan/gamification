@@ -650,7 +650,11 @@
                 const errors = results.filter(r => r.status === 'rejected');
                 if (errors.length > 0) {
                     console.error('Some data failed to load:', errors);
-                    showErrorMessage('Some data could not be loaded. Check console for details.');
+                    if (IS_VERCEL) {
+                        showErrorMessage('⚠️ SharePoint authentication required. The proxy API needs Azure AD authentication configured. Data cannot load without authentication. See console for details.');
+                    } else {
+                        showErrorMessage('Some data could not be loaded. Check console for details.');
+                    }
                 }
                 
                 renderDashboard();
@@ -788,8 +792,24 @@
                         }
                     });
                 });
+            } else if (IS_VERCEL) {
+                // Use proxy API when on Vercel
+                try {
+                    const data = await fetchSharePointData(url, siteUrl);
+                    if (data.d && data.d.Email) {
+                        currentUserEmail = data.d.Email;
+                        const userNameEl = document.getElementById('userName');
+                        if (userNameEl) {
+                            userNameEl.textContent = data.d.Title;
+                        }
+                        console.log('Current user:', currentUserEmail);
+                    }
+                } catch (error) {
+                    console.error('Error loading current user via proxy:', error);
+                    // Continue without user email - not critical
+                }
             } else {
-                // Try direct fetch
+                // Try direct fetch (will likely fail due to CORS)
                 try {
                     const response = await fetch(`${siteUrl}${url}`, {
                         headers: {
