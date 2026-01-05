@@ -552,6 +552,7 @@
         // Check if running in SharePoint
         const IS_SHAREPOINT = window.location.hostname.includes('sharepoint.com');
         const IS_LOCAL = window.location.protocol === 'file:';
+        const IS_VERCEL = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com');
         
         // Auto-detect SharePoint site if running within SharePoint
         let ACTUAL_SHAREPOINT_SITE = SHAREPOINT_SITE;
@@ -559,6 +560,9 @@
             // Use current site if running in SharePoint
             ACTUAL_SHAREPOINT_SITE = window.location.protocol + '//' + window.location.hostname + window.location.pathname.split('/').slice(0, 4).join('/');
         }
+        
+        // Vercel API proxy endpoint
+        const PROXY_API = '/api/sharepoint-proxy';
 
         // Global data storage
         let userTotalsData = [];
@@ -615,8 +619,13 @@
                 // Initialize SP.RequestExecutor for authenticated requests
                 executor = new SP.RequestExecutor(ACTUAL_SHAREPOINT_SITE);
                 loadData();
+            } else if (IS_VERCEL) {
+                // Use Vercel proxy API for dynamic data
+                console.log('Running on Vercel - using proxy API');
+                loadData();
             } else {
                 // Try direct fetch (may have CORS issues)
+                console.warn('Running outside SharePoint/Vercel - direct fetch may fail');
                 loadData();
             }
         });
@@ -677,6 +686,65 @@
             
             // Auto-remove after 10 seconds
             setTimeout(() => errorDiv.remove(), 10000);
+        }
+        
+        // Helper function to fetch SharePoint data (supports SharePoint, Vercel proxy, and direct)
+        async function fetchSharePointData(apiPath, siteUrl, listName = null, userEmail = null) {
+            if (IS_SHAREPOINT && executor) {
+                // Use SP.RequestExecutor when in SharePoint
+                return new Promise((resolve, reject) => {
+                    executor.executeAsync({
+                        url: `${siteUrl}${apiPath}`,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': 'application/json;odata=verbose'
+                        },
+                        success: (data) => {
+                            try {
+                                const jsonData = JSON.parse(data.body);
+                                resolve(jsonData);
+                            } catch (error) {
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            reject(error);
+                        }
+                    });
+                });
+            } else if (IS_VERCEL) {
+                // Use Vercel proxy API
+                const proxyUrl = new URL(PROXY_API, window.location.origin);
+                proxyUrl.searchParams.set('apiPath', apiPath);
+                proxyUrl.searchParams.set('siteUrl', siteUrl);
+                if (listName) proxyUrl.searchParams.set('listName', listName);
+                if (userEmail) proxyUrl.searchParams.set('userEmail', userEmail);
+                
+                const response = await fetch(proxyUrl.toString());
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Proxy API error: ${response.status} - ${errorData.error || response.statusText}`);
+                }
+                
+                return await response.json();
+            } else {
+                // Try direct fetch (may fail due to CORS/auth)
+                const response = await fetch(`${siteUrl}${apiPath}`, {
+                    headers: {
+                        'Accept': 'application/json;odata=verbose',
+                        'Content-Type': 'application/json;odata=verbose'
+                    },
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return await response.json();
+            }
         }
 
         // Get current user email
@@ -751,296 +819,110 @@
 
         // Load SP_UserTotals list
         async function loadUserTotals() {
-            // Try multiple field name variations for Person/Group field
-            const urlVariations = [
-                `/_api/web/lists/getbytitle('${LIST_USER_TOTALS}')/items?$select=ID,TotalPoints,Tier,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=TotalPoints desc`,
-                `/_api/web/lists/getbytitle('${LIST_USER_TOTALS}')/items?$select=ID,TotalPoints,Tier,EmployeeEmail&$expand=EmployeeEmail&$orderby=TotalPoints desc`,
-                `/_api/web/lists/getbytitle('${LIST_USER_TOTALS}')/items?$select=ID,TotalPoints,Tier&$orderby=TotalPoints desc`
-            ];
-            
+            const apiPath = `/_api/web/lists/getbytitle('${LIST_USER_TOTALS}')/items?$select=ID,TotalPoints,Tier,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=TotalPoints desc`;
             const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
             
-            if (IS_SHAREPOINT && executor) {
-                // Use SP.RequestExecutor for cross-site requests
-                return new Promise((resolve, reject) => {
-                    // Try first URL variation
-                    executor.executeAsync({
-                        url: `${siteUrl}${urlVariations[0]}`,
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        success: (data) => {
-                            try {
-                                const jsonData = JSON.parse(data.body);
-                                if (jsonData.d && jsonData.d.results) {
-                                    userTotalsData = jsonData.d.results.map(item => {
-                                        // Handle Person/Group field - try different property paths
-                                        const email = item.EmployeeEmail?.Email || 
-                                                    item.EmployeeEmail?.EMail || 
-                                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
-                                                    '';
-                                        const name = item.EmployeeEmail?.Title || 
-                                                   item.EmployeeEmail?.DisplayName || 
-                                                   item.EmployeeEmail?.Name || 
-                                                   'Unknown';
-                                        
-                                        return {
-                                            id: item.ID,
-                                            totalPoints: item.TotalPoints || 0,
-                                            tier: item.Tier || 'Tier 1',
-                                            email: email,
-                                            name: name
-                                        };
-                                    });
-                                    console.log('User Totals loaded:', userTotalsData.length, 'users');
-                                    resolve();
-                                } else {
-                                    throw new Error('Invalid response format');
-                                }
-                            } catch (error) {
-                                console.error('Error parsing user totals:', error);
-                                reject(error);
-                            }
-                        },
-                        error: (error) => {
-                            console.error('Error loading user totals:', error);
-                            reject(error);
-                        }
+            try {
+                const data = await fetchSharePointData(apiPath, siteUrl, LIST_USER_TOTALS);
+                
+                if (data.d && data.d.results) {
+                    userTotalsData = data.d.results.map(item => {
+                        // Handle Person/Group field - try different property paths
+                        const email = item.EmployeeEmail?.Email || 
+                                    item.EmployeeEmail?.EMail || 
+                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
+                                    '';
+                        const name = item.EmployeeEmail?.Title || 
+                                   item.EmployeeEmail?.DisplayName || 
+                                   item.EmployeeEmail?.Name || 
+                                   'Unknown';
+                        
+                        return {
+                            id: item.ID,
+                            totalPoints: item.TotalPoints || 0,
+                            tier: item.Tier || 'Tier 1',
+                            email: email,
+                            name: name
+                        };
                     });
-                });
-            } else {
-                // Try direct fetch
-                try {
-                    const response = await fetch(`${siteUrl}${urlVariations[0]}`, {
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    if (data.d && data.d.results) {
-                        userTotalsData = data.d.results.map(item => {
-                            const email = item.EmployeeEmail?.Email || 
-                                        item.EmployeeEmail?.EMail || 
-                                        (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
-                                        '';
-                            const name = item.EmployeeEmail?.Title || 
-                                       item.EmployeeEmail?.DisplayName || 
-                                       item.EmployeeEmail?.Name || 
-                                       'Unknown';
-                            
-                            return {
-                                id: item.ID,
-                                totalPoints: item.TotalPoints || 0,
-                                tier: item.Tier || 'Tier 1',
-                                email: email,
-                                name: name
-                            };
-                        });
-                        console.log('User Totals loaded:', userTotalsData.length, 'users');
-                    } else {
-                        throw new Error('Invalid response format');
-                    }
-                } catch (error) {
-                    console.error('Error loading user totals:', error);
-                    throw error; // Re-throw to be caught by Promise.allSettled
+                    console.log('User Totals loaded:', userTotalsData.length, 'users');
+                } else {
+                    throw new Error('Invalid response format');
                 }
+            } catch (error) {
+                console.error('Error loading user totals:', error);
+                if (!IS_SHAREPOINT && !IS_VERCEL) {
+                    showErrorMessage('Failed to load data. SharePoint requires authentication. Please configure the proxy API or deploy to Vercel.');
+                }
+                throw error;
             }
         }
 
         // Load SP_PointsLedger list
         async function loadPointsLedger() {
-            const url = `/_api/web/lists/getbytitle('${LIST_POINTS_LEDGER}')/items?$select=ID,Points,ActionType,SourceApp,CreatedOn,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=CreatedOn desc&$top=100`;
+            const apiPath = `/_api/web/lists/getbytitle('${LIST_POINTS_LEDGER}')/items?$select=ID,Points,ActionType,SourceApp,CreatedOn,EmployeeEmail/Email,EmployeeEmail/Title&$expand=EmployeeEmail&$orderby=CreatedOn desc&$top=100`;
             const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
             
-            if (IS_SHAREPOINT && executor) {
-                // Use SP.RequestExecutor for cross-site requests
-                return new Promise((resolve, reject) => {
-                    executor.executeAsync({
-                        url: `${siteUrl}${url}`,
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        success: (data) => {
-                            try {
-                                const jsonData = JSON.parse(data.body);
-                                if (jsonData.d && jsonData.d.results) {
-                                    pointsLedgerData = jsonData.d.results.map(item => {
-                                        const email = item.EmployeeEmail?.Email || 
-                                                    item.EmployeeEmail?.EMail || 
-                                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
-                                                    '';
-                                        const name = item.EmployeeEmail?.Title || 
-                                                   item.EmployeeEmail?.DisplayName || 
-                                                   item.EmployeeEmail?.Name || 
-                                                   'Unknown';
-                                        
-                                        return {
-                                            id: item.ID,
-                                            points: item.Points || 0,
-                                            actionType: item.ActionType || 'Unknown',
-                                            sourceApp: item.SourceApp || 'Unknown',
-                                            createdOn: new Date(item.CreatedOn),
-                                            email: email,
-                                            name: name
-                                        };
-                                    });
-                                    console.log('Points Ledger loaded:', pointsLedgerData.length, 'entries');
-                                    resolve();
-                                } else {
-                                    throw new Error('Invalid response format');
-                                }
-                            } catch (error) {
-                                console.error('Error parsing points ledger:', error);
-                                reject(error);
-                            }
-                        },
-                        error: (error) => {
-                            console.error('Error loading points ledger:', error);
-                            reject(error);
-                        }
+            try {
+                const data = await fetchSharePointData(apiPath, siteUrl, LIST_POINTS_LEDGER);
+                
+                if (data.d && data.d.results) {
+                    pointsLedgerData = data.d.results.map(item => {
+                        const email = item.EmployeeEmail?.Email || 
+                                    item.EmployeeEmail?.EMail || 
+                                    (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
+                                    '';
+                        const name = item.EmployeeEmail?.Title || 
+                                   item.EmployeeEmail?.DisplayName || 
+                                   item.EmployeeEmail?.Name || 
+                                   'Unknown';
+                        
+                        return {
+                            id: item.ID,
+                            points: item.Points || 0,
+                            actionType: item.ActionType || 'Unknown',
+                            sourceApp: item.SourceApp || 'Unknown',
+                            createdOn: new Date(item.CreatedOn),
+                            email: email,
+                            name: name
+                        };
                     });
-                });
-            } else {
-                // Try direct fetch
-                try {
-                    const response = await fetch(`${siteUrl}${url}`, {
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    if (data.d && data.d.results) {
-                        pointsLedgerData = data.d.results.map(item => {
-                            const email = item.EmployeeEmail?.Email || 
-                                        item.EmployeeEmail?.EMail || 
-                                        (item.EmployeeEmail && typeof item.EmployeeEmail === 'string' ? item.EmployeeEmail : '') || 
-                                        '';
-                            const name = item.EmployeeEmail?.Title || 
-                                       item.EmployeeEmail?.DisplayName || 
-                                       item.EmployeeEmail?.Name || 
-                                       'Unknown';
-                            
-                            return {
-                                id: item.ID,
-                                points: item.Points || 0,
-                                actionType: item.ActionType || 'Unknown',
-                                sourceApp: item.SourceApp || 'Unknown',
-                                createdOn: new Date(item.CreatedOn),
-                                email: email,
-                                name: name
-                            };
-                        });
-                        console.log('Points Ledger loaded:', pointsLedgerData.length, 'entries');
-                    } else {
-                        throw new Error('Invalid response format');
-                    }
-                } catch (error) {
-                    console.error('Error loading points ledger:', error);
-                    throw error; // Re-throw to be caught by Promise.allSettled
+                    console.log('Points Ledger loaded:', pointsLedgerData.length, 'entries');
+                } else {
+                    throw new Error('Invalid response format');
                 }
+            } catch (error) {
+                console.error('Error loading points ledger:', error);
+                throw error;
             }
         }
 
         // Load SP_Rewards list
         async function loadRewards() {
-            const url = `/_api/web/lists/getbytitle('${LIST_REWARDS}')/items?$select=ID,Title,Description,PointsCost,AvailableQuantity,Status,Category&$filter=Status eq 'Active'&$orderby=PointsCost asc`;
+            const apiPath = `/_api/web/lists/getbytitle('${LIST_REWARDS}')/items?$select=ID,Title,Description,PointsCost,AvailableQuantity,Status,Category&$filter=Status eq 'Active'&$orderby=PointsCost asc`;
             const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
             
-            if (IS_SHAREPOINT && executor) {
-                return new Promise((resolve, reject) => {
-                    executor.executeAsync({
-                        url: `${siteUrl}${url}`,
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        success: (data) => {
-                            try {
-                                const jsonData = JSON.parse(data.body);
-                                if (jsonData.d && jsonData.d.results) {
-                                    rewardsData = jsonData.d.results.map(item => ({
-                                        id: item.ID,
-                                        title: item.Title || 'Untitled Reward',
-                                        description: item.Description || 'No description available',
-                                        pointsCost: item.PointsCost || 0,
-                                        availableQuantity: item.AvailableQuantity || 0,
-                                        status: item.Status || 'Active',
-                                        category: item.Category || 'Other'
-                                    }));
-                                    console.log('Rewards loaded:', rewardsData.length, 'rewards');
-                                    resolve();
-                                } else {
-                                    // Empty results is OK
-                                    rewardsData = [];
-                                    console.log('No rewards found');
-                                    resolve();
-                                }
-                            } catch (error) {
-                                console.error('Error parsing rewards:', error);
-                                reject(error);
-                            }
-                        },
-                        error: (error) => {
-                            console.error('Error loading rewards:', error);
-                            reject(error);
-                        }
-                    });
-                });
-            } else {
-                // Try direct fetch
-                try {
-                    const response = await fetch(`${siteUrl}${url}`, {
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.d && data.d.results) {
-                            rewardsData = data.d.results.map(item => ({
-                                id: item.ID,
-                                title: item.Title || 'Untitled Reward',
-                                description: item.Description || 'No description available',
-                                pointsCost: item.PointsCost || 0,
-                                availableQuantity: item.AvailableQuantity || 0,
-                                status: item.Status || 'Active',
-                                category: item.Category || 'Other'
-                            }));
-                            console.log('Rewards loaded:', rewardsData.length, 'rewards');
-                        } else {
-                            rewardsData = [];
-                        }
-                    } else {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                } catch (error) {
-                    console.error('Error loading rewards:', error);
-                    throw error; // Re-throw to be caught by Promise.allSettled
+            try {
+                const data = await fetchSharePointData(apiPath, siteUrl, LIST_REWARDS);
+                
+                if (data.d && data.d.results) {
+                    rewardsData = data.d.results.map(item => ({
+                        id: item.ID,
+                        title: item.Title || 'Untitled Reward',
+                        description: item.Description || 'No description available',
+                        pointsCost: item.PointsCost || 0,
+                        availableQuantity: item.AvailableQuantity || 0,
+                        status: item.Status || 'Active',
+                        category: item.Category || 'Other'
+                    }));
+                    console.log('Rewards loaded:', rewardsData.length, 'rewards');
+                } else {
+                    rewardsData = [];
+                    console.log('No rewards found');
                 }
+            } catch (error) {
+                console.error('Error loading rewards:', error);
+                rewardsData = []; // Don't throw - just use empty array
             }
         }
 
@@ -1052,108 +934,38 @@
                 return;
             }
 
-            // Try different filter syntaxes for Person/Group field
-            const urlVariations = [
-                `/_api/web/lists/getbytitle('${LIST_REDEMPTIONS}')/items?$select=ID,Title,Reward/Title,Reward/Id,PointsDeducted,Status,RequestDate,ApprovalDate,Employee/Email&$expand=Reward,Employee&$filter=Employee/Email eq '${currentUserEmail}'&$orderby=RequestDate desc&$top=50`,
-                `/_api/web/lists/getbytitle('${LIST_REDEMPTIONS}')/items?$select=ID,Title,Reward/Title,Reward/Id,PointsDeducted,Status,RequestDate,ApprovalDate,Employee&$expand=Reward,Employee&$orderby=RequestDate desc&$top=50`
-            ];
-            
+            const apiPath = `/_api/web/lists/getbytitle('${LIST_REDEMPTIONS}')/items?$select=ID,Title,Reward/Title,Reward/Id,PointsDeducted,Status,RequestDate,ApprovalDate,Employee/Email&$expand=Reward,Employee&$filter=Employee/Email eq '${currentUserEmail}'&$orderby=RequestDate desc&$top=50`;
             const siteUrl = IS_SHAREPOINT ? ACTUAL_SHAREPOINT_SITE : SHAREPOINT_SITE;
-            const url = urlVariations[0];
             
-            if (IS_SHAREPOINT && executor) {
-                return new Promise((resolve, reject) => {
-                    executor.executeAsync({
-                        url: `${siteUrl}${url}`,
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        success: (data) => {
-                            try {
-                                const jsonData = JSON.parse(data.body);
-                                if (jsonData.d && jsonData.d.results) {
-                                    redemptionsData = jsonData.d.results
-                                        .filter(item => {
-                                            // Filter by email if filter didn't work
-                                            const itemEmail = item.Employee?.Email || 
-                                                            item.Employee?.EMail || 
-                                                            (item.Employee && typeof item.Employee === 'string' ? item.Employee : '');
-                                            return itemEmail === currentUserEmail;
-                                        })
-                                        .map(item => ({
-                                            id: item.ID,
-                                            rewardName: item.Reward?.Title || item.Title || 'Unknown Reward',
-                                            rewardId: item.Reward?.Id || 0,
-                                            pointsDeducted: item.PointsDeducted || 0,
-                                            status: item.Status || 'Pending',
-                                            requestDate: item.RequestDate ? new Date(item.RequestDate) : null,
-                                            approvalDate: item.ApprovalDate ? new Date(item.ApprovalDate) : null
-                                        }));
-                                    console.log('Redemptions loaded:', redemptionsData.length, 'redemptions');
-                                    resolve();
-                                } else {
-                                    // Empty results is OK
-                                    redemptionsData = [];
-                                    console.log('No redemptions found');
-                                    resolve();
-                                }
-                            } catch (error) {
-                                console.error('Error parsing redemptions:', error);
-                                reject(error);
-                            }
-                        },
-                        error: (error) => {
-                            console.error('Error loading redemptions:', error);
-                            // Don't reject - just return empty array
-                            redemptionsData = [];
-                            resolve();
-                        }
-                    });
-                });
-            } else {
-                // Try direct fetch
-                try {
-                    const response = await fetch(`${siteUrl}${url}`, {
-                        headers: {
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': 'application/json;odata=verbose'
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.d && data.d.results) {
-                            redemptionsData = data.d.results
-                                .filter(item => {
-                                    const itemEmail = item.Employee?.Email || 
-                                                    item.Employee?.EMail || 
-                                                    (item.Employee && typeof item.Employee === 'string' ? item.Employee : '');
-                                    return itemEmail === currentUserEmail;
-                                })
-                                .map(item => ({
-                                    id: item.ID,
-                                    rewardName: item.Reward?.Title || item.Title || 'Unknown Reward',
-                                    rewardId: item.Reward?.Id || 0,
-                                    pointsDeducted: item.PointsDeducted || 0,
-                                    status: item.Status || 'Pending',
-                                    requestDate: item.RequestDate ? new Date(item.RequestDate) : null,
-                                    approvalDate: item.ApprovalDate ? new Date(item.ApprovalDate) : null
-                                }));
-                            console.log('Redemptions loaded:', redemptionsData.length, 'redemptions');
-                        } else {
-                            redemptionsData = [];
-                        }
-                    } else {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                } catch (error) {
-                    console.error('Error loading redemptions:', error);
+            try {
+                const data = await fetchSharePointData(apiPath, siteUrl, LIST_REDEMPTIONS, currentUserEmail);
+                
+                if (data.d && data.d.results) {
+                    redemptionsData = data.d.results
+                        .filter(item => {
+                            // Filter by email if filter didn't work
+                            const itemEmail = item.Employee?.Email || 
+                                            item.Employee?.EMail || 
+                                            (item.Employee && typeof item.Employee === 'string' ? item.Employee : '');
+                            return itemEmail === currentUserEmail;
+                        })
+                        .map(item => ({
+                            id: item.ID,
+                            rewardName: item.Reward?.Title || item.Title || 'Unknown Reward',
+                            rewardId: item.Reward?.Id || 0,
+                            pointsDeducted: item.PointsDeducted || 0,
+                            status: item.Status || 'Pending',
+                            requestDate: item.RequestDate ? new Date(item.RequestDate) : null,
+                            approvalDate: item.ApprovalDate ? new Date(item.ApprovalDate) : null
+                        }));
+                    console.log('Redemptions loaded:', redemptionsData.length, 'redemptions');
+                } else {
                     redemptionsData = [];
-                    // Don't throw - redemptions are optional
+                    console.log('No redemptions found');
                 }
+            } catch (error) {
+                console.error('Error loading redemptions:', error);
+                redemptionsData = []; // Don't throw - just use empty array
             }
         }
 
